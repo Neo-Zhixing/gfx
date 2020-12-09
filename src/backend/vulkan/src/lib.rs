@@ -34,7 +34,7 @@ use hal::{
 };
 
 use std::{
-    borrow::{Borrow, Cow},
+    borrow::{Borrow, BorrowMut, Cow},
     ffi::{CStr, CString},
     fmt, mem, slice,
     sync::Arc,
@@ -1474,6 +1474,135 @@ impl queue::CommandQueue<Backend> for CommandQueue {
 
         let result = self.device.raw.queue_submit(*self.raw, &[*info], fence_raw);
         assert_eq!(Ok(()), result);
+    }
+
+    unsafe fn bind_sparse<'a, M, Bf, I, S, Iw, Is, Ibi, Ib, Iii, Io, Ii>(
+        &mut self,
+        info: queue::BindSparseInfo<Iw, Is, Ib, Io, Ii>,
+        device: &Device,
+        fence: Option<&native::Fence>,
+    ) where
+        Bf: 'a + BorrowMut<native::Buffer>,
+        M: 'a + Borrow<native::Memory>,
+        Ibi: IntoIterator<Item = memory::SparseBind<&'a M>>,
+        Ib: IntoIterator<Item = (&'a mut Bf, Ibi)>,
+        I: 'a + BorrowMut<native::Image>,
+        Iii: IntoIterator<Item = memory::SparseImageBind<&'a M>>,
+        Io: IntoIterator<Item = (&'a mut I, Ibi)>,
+        Ii: IntoIterator<Item = (&'a mut I, Iii)>,
+        S: 'a + Borrow<native::Semaphore>,
+        Iw: IntoIterator<Item = &'a S>,
+        Is: IntoIterator<Item = &'a S>,
+    {
+        //TODO: avoid heap allocations
+        let mut waits = Vec::new();
+
+        for semaphore in info.wait_semaphores {
+            waits.push(semaphore.borrow().0);
+        }
+        let signals = info
+            .signal_semaphores
+            .into_iter()
+            .map(|semaphore| semaphore.borrow().0)
+            .collect::<Vec<_>>();
+
+        let mut buffer_memory_binds = Vec::new();
+        let buffer_binds = info
+            .buffer_memory_binds
+            .into_iter()
+            .map(|(buffer, bind_iter)| {
+                let binds_before = buffer_memory_binds.len();
+                buffer_memory_binds.extend(bind_iter.into_iter().map(|bind| {
+                    let mut bind_builder = vk::SparseMemoryBind::builder()
+                        .resource_offset(bind.resource_offset as u64)
+                        .size(bind.size as u64);
+                    if let Some((memory, memory_offset)) = bind.memory {
+                        bind_builder = bind_builder.memory(memory.borrow().raw);
+                        bind_builder = bind_builder.memory_offset(memory_offset as u64);
+                    }
+
+                    bind_builder.build()
+                }));
+
+                vk::SparseBufferMemoryBindInfo::builder()
+                    .buffer(buffer.borrow_mut().raw)
+                    .binds(&buffer_memory_binds[binds_before..])
+                    .build()
+            })
+            .collect::<Vec<_>>();
+
+        let mut image_opaque_memory_binds = Vec::new();
+        let image_opaque_binds = info
+            .image_opaque_memory_binds
+            .into_iter()
+            .map(|(image, bind_iter)| {
+                let binds_before = image_opaque_memory_binds.len();
+                image_opaque_memory_binds.extend(bind_iter.into_iter().map(|bind| {
+                    let mut bind_builder = vk::SparseMemoryBind::builder()
+                        .resource_offset(bind.resource_offset as u64)
+                        .size(bind.size as u64);
+                    if let Some((memory, memory_offset)) = bind.memory {
+                        bind_builder = bind_builder.memory(memory.borrow().raw);
+                        bind_builder = bind_builder.memory_offset(memory_offset as u64);
+                    }
+
+                    bind_builder.build()
+                }));
+
+                vk::SparseImageOpaqueMemoryBindInfo::builder()
+                    .image(image.borrow_mut().raw)
+                    .binds(
+                        &image_opaque_memory_binds[binds_before..image_opaque_memory_binds.len()],
+                    )
+                    .build()
+            })
+            .collect::<Vec<_>>();
+
+        let mut image_memory_binds = Vec::new();
+        let image_binds = info
+            .image_memory_binds
+            .into_iter()
+            .map(|(image, bind_iter)| {
+                let binds_before = image_memory_binds.len();
+                image_memory_binds.extend(bind_iter.into_iter().map(|bind| {
+                    let mut bind_builder = vk::SparseImageMemoryBind::builder()
+                        .subresource(conv::map_subresource(&bind.subresource))
+                        .offset(conv::map_offset(bind.offset))
+                        .extent(conv::map_extent(bind.extent));
+                    if let Some((memory, memory_offset)) = bind.memory {
+                        bind_builder = bind_builder.memory(memory.borrow().raw);
+                        bind_builder = bind_builder.memory_offset(memory_offset as u64);
+                    }
+
+                    bind_builder.build()
+                }));
+
+                vk::SparseImageMemoryBindInfo::builder()
+                    .image(image.borrow_mut().raw)
+                    .binds(&image_memory_binds[binds_before..image_memory_binds.len()])
+                    .build()
+            })
+            .collect::<Vec<_>>();
+
+        let info = vk::BindSparseInfo::builder()
+            .wait_semaphores(&waits)
+            .signal_semaphores(&signals)
+            .buffer_binds(&buffer_binds)
+            .image_opaque_binds(&image_opaque_binds)
+            .image_binds(&image_binds);
+
+        let info = info.build();
+        let fence_raw = fence.map(|fence| fence.0).unwrap_or(vk::Fence::null());
+
+        // TODO temporary hack as method is not yet exposed, https://github.com/MaikKlein/ash/issues/342
+        assert_eq!(
+            vk::Result::SUCCESS,
+            device
+                .shared
+                .raw
+                .fp_v1_0()
+                .queue_bind_sparse(*self.raw, 1, &info, fence_raw)
+        );
     }
 
     unsafe fn present(

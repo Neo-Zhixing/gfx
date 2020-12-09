@@ -2407,6 +2407,27 @@ impl hal::queue::CommandQueue<Backend> for CommandQueue {
         }
     }
 
+    unsafe fn bind_sparse<'a, M, Bf, I, S, Iw, Is, Ibi, Ib, Iii, Io, Ii>(
+        &mut self,
+        _info: hal::queue::BindSparseInfo<Iw, Is, Ib, Io, Ii>,
+        _device: &crate::Device,
+        _fence: Option<&native::Fence>,
+    ) where
+        Bf: 'a + std::borrow::BorrowMut<native::Buffer>,
+        M: 'a + Borrow<native::Memory>,
+        Ibi: IntoIterator<Item = hal::memory::SparseBind<&'a M>>,
+        Ib: IntoIterator<Item = (&'a mut Bf, Ibi)>,
+        I: 'a + std::borrow::BorrowMut<native::Image>,
+        Iii: IntoIterator<Item = hal::memory::SparseImageBind<&'a M>>,
+        Io: IntoIterator<Item = (&'a mut I, Ibi)>,
+        Ii: IntoIterator<Item = (&'a mut I, Iii)>,
+        S: 'a + Borrow<native::Semaphore>,
+        Iw: IntoIterator<Item = &'a S>,
+        Is: IntoIterator<Item = &'a S>,
+    {
+        unimplemented!()
+    }
+
     unsafe fn present(
         &mut self,
         _surface: &mut window::Surface,

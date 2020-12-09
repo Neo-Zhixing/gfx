@@ -6,7 +6,10 @@ use crate::{
 use glow::HasContext;
 use smallvec::SmallVec;
 
-use std::{borrow::Borrow, mem, slice};
+use std::{
+    borrow::{Borrow, BorrowMut},
+    mem, slice,
+};
 
 // State caching system for command queue.
 //
@@ -1111,6 +1114,28 @@ impl hal::queue::CommandQueue<Backend> for CommandQueue {
                 fence.0.set(native::FenceInner::Idle { signaled: true });
             }
         }
+    }
+
+    unsafe fn bind_sparse<'a, M, Bf, I, S, Iw, Is, Ibi, Ib, Iii, Io, Ii>(
+        &mut self,
+        _info: hal::queue::BindSparseInfo<Iw, Is, Ib, Io, Ii>,
+        _device: &device::Device,
+        _fence: Option<&native::Fence>,
+    ) where
+        Bf: 'a + BorrowMut<native::Buffer>,
+        M: 'a + Borrow<native::Memory>,
+        Ibi: IntoIterator<Item = hal::memory::SparseBind<&'a M>>,
+        Ib: IntoIterator<Item = (&'a mut Bf, Ibi)>,
+        I: 'a + BorrowMut<native::Image>,
+        Iii: IntoIterator<Item = hal::memory::SparseImageBind<&'a M>>,
+        Io: IntoIterator<Item = (&'a mut I, Ibi)>,
+        Ii: IntoIterator<Item = (&'a mut I, Iii)>,
+        S: 'a + Borrow<native::Semaphore>,
+        Iw: IntoIterator<Item = &'a S>,
+        Is: IntoIterator<Item = &'a S>,
+    {
+        // TODO could be implemented with https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_sparse_texture.txt
+        todo!()
     }
 
     unsafe fn present(

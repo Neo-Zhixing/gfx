@@ -13,7 +13,10 @@ use crate::{
 use hal::{adapter, command, device, format, pass, pool, pso, query, queue, window};
 use log::debug;
 
-use std::{borrow::Borrow, ops::Range};
+use std::{
+    borrow::{Borrow, BorrowMut},
+    ops::Range,
+};
 
 mod buffer;
 mod descriptor;
@@ -171,6 +174,26 @@ impl queue::CommandQueue<Backend> for CommandQueue {
         Ic: IntoIterator<Item = &'a T>,
         S: 'a + Borrow<()>,
         Iw: IntoIterator<Item = (&'a S, pso::PipelineStage)>,
+        Is: IntoIterator<Item = &'a S>,
+    {
+    }
+
+    unsafe fn bind_sparse<'a, M, Bf, I, S, Iw, Is, Ibi, Ib, Iii, Io, Ii>(
+        &mut self,
+        _: queue::BindSparseInfo<Iw, Is, Ib, Io, Ii>,
+        _: &Device,
+        _: Option<&()>,
+    ) where
+        Bf: 'a + BorrowMut<Buffer>,
+        M: 'a + Borrow<Memory>,
+        Ibi: IntoIterator<Item = gfx_hal::memory::SparseBind<&'a M>>,
+        Ib: IntoIterator<Item = (&'a mut Bf, Ibi)>,
+        I: 'a + BorrowMut<Image>,
+        Iii: IntoIterator<Item = gfx_hal::memory::SparseImageBind<&'a M>>,
+        Io: IntoIterator<Item = (&'a mut I, Ibi)>,
+        Ii: IntoIterator<Item = (&'a mut I, Iii)>,
+        S: 'a + Borrow<()>,
+        Iw: IntoIterator<Item = &'a S>,
         Is: IntoIterator<Item = &'a S>,
     {
     }

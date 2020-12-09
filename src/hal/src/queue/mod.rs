@@ -14,9 +14,14 @@ use crate::{
     window::{PresentError, PresentationSurface, Suboptimal},
     Backend,
 };
-use std::{any::Any, borrow::Borrow, fmt, iter};
+use std::{
+    any::Any,
+    borrow::{Borrow, BorrowMut},
+    fmt, iter,
+};
 
 pub use self::family::{QueueFamily, QueueFamilyId, QueueGroup};
+use crate::memory::{SparseBind, SparseImageBind};
 
 /// The type of the queue, an enum encompassing `queue::Capability`
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -70,6 +75,23 @@ pub struct Submission<Ic, Iw, Is> {
     pub signal_semaphores: Is,
 }
 
+/// Information for binding sparse memory using a [command queue][CommandQueue].
+///
+/// The info is sent to the device through the [`bind_sparse`][CommandQueue::bind_sparse] method.
+#[derive(Debug)]
+pub struct BindSparseInfo<Iw, Is, Ib, Io, Ii> {
+    /// Semaphores to wait being signalled before submission.
+    pub wait_semaphores: Iw,
+    /// Semaphores to signal after all command buffers in the submission have finished execution.
+    pub signal_semaphores: Is,
+    /// Defines sparse buffer memory bind operations.
+    pub buffer_memory_binds: Ib,
+    /// Defines sparse image opaque memory bind operations.
+    pub image_opaque_memory_binds: Io,
+    /// Defines sparse image memory bind operations.
+    pub image_memory_binds: Ii,
+}
+
 /// Abstraction for an internal GPU execution engine.
 ///
 /// Commands are executed on the the device by submitting
@@ -103,6 +125,43 @@ pub trait CommandQueue<B: Backend>: fmt::Debug + Any + Send + Sync {
         S: 'a + Borrow<B::Semaphore>,
         Iw: IntoIterator<Item = (&'a S, pso::PipelineStage)>,
         Is: IntoIterator<Item = &'a S>;
+
+    /// Sparse memory bind operation.
+    ///
+    /// # Arguments
+    ///
+    /// * `info` - information about the memory bindings.
+    ///
+    /// # Safety
+    ///
+    /// - Defining memory as `None` will cause undefined behaviour when the
+    /// tile is read or written from in some hardware.
+    /// - The memory regions provided are not checked to be valid and matching
+    /// of the sparse resource type.
+    /// - If extents are not a multiple of the block size, additional space will be
+    /// bound, and accessing memory is unsafe.
+    unsafe fn bind_sparse<'a, M, Bf, I, S, Iw, Is, Ibi, Ib, Iii, Io, Ii>(
+        &mut self,
+        info: BindSparseInfo<Iw, Is, Ib, Io, Ii>,
+        device: &B::Device,
+        fence: Option<&B::Fence>,
+    ) where
+        Bf: 'a + BorrowMut<B::Buffer>,
+        M: 'a + Borrow<B::Memory>,
+        Ibi: IntoIterator<Item = SparseBind<&'a M>>,
+        Ib: IntoIterator<Item = (&'a mut Bf, Ibi)>,
+        I: 'a + BorrowMut<B::Image>,
+        Iii: IntoIterator<Item = SparseImageBind<&'a M>>,
+        Io: IntoIterator<Item = (&'a mut I, Ibi)>,
+        Ii: IntoIterator<Item = (&'a mut I, Iii)>,
+        S: 'a + Borrow<B::Semaphore>,
+        Iw: IntoIterator<Item = &'a S>,
+        Is: IntoIterator<Item = &'a S>,
+        Ibi::IntoIter: ExactSizeIterator,
+        Ib::IntoIter: ExactSizeIterator,
+        Iii::IntoIter: ExactSizeIterator,
+        Io::IntoIter: ExactSizeIterator,
+        Ii::IntoIter: ExactSizeIterator;
 
     /// Simplified version of `submit` that doesn't expect any semaphores.
     unsafe fn submit_without_semaphores<'a, T, Ic>(

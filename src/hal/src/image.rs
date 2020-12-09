@@ -329,6 +329,14 @@ bitflags!(
     /// Capabilities to create views into an image.
     #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
     pub struct ViewCapabilities: u32 {
+        /// Specifies the view will be backed using sparse memory binding.
+        const SPARSE_BINDING = 0x0000_0001;
+        /// Specifies the view can be partially backed with sparse memory binding.
+        /// Must have `SPARSE_BINDING` enabled.
+        const SPARSE_RESIDENCY = 0x0000_0002;
+        ///Specifies the view will be backed using sparse memory binding with memory bindings that
+        /// might alias other data. Must have `SPARSE_BINDING` enabled.
+        const SPARSE_ALIASED = 0x0000_0004;
         /// Support creation of views with different formats.
         const MUTABLE_FORMAT = 0x0000_0008;
         /// Support creation of `Cube` and `CubeArray` kinds of views.
@@ -697,4 +705,47 @@ pub struct SubresourceFootprint {
     pub array_pitch: RawOffset,
     /// Byte distance between depth slices.
     pub depth_pitch: RawOffset,
+}
+
+/// The type of tile to check for with `get_tile_size`.
+#[derive(Debug)]
+pub enum TileKind {
+    /// A volume or 3D image tile kind.
+    Volume,
+    /// A flat or 2D image tile kind, with the number of samples for MSAA.
+    Flat(NumSamples),
+}
+
+// https://www.khronos.org/registry/vulkan/specs/1.2-extensions/html/vkspec.html#sparsememory-standard-shapes
+// https://docs.microsoft.com/en-us/windows/win32/direct3d11/texture2d-and-texture2darray-subresource-tiling
+/// Tile or block size for sparse binding
+pub fn get_tile_size(tile_kind: TileKind, texel_bits: u16) -> (u16, u16, u16) {
+    match tile_kind {
+        TileKind::Flat(samples) => {
+            let sizes = match texel_bits {
+                8 => (256, 256, 1),
+                16 => (256, 128, 1),
+                32 => (128, 128, 1),
+                64 => (128, 64, 1),
+                128 => (64, 64, 1),
+                _ => unimplemented!(),
+            };
+            match samples {
+                1 => sizes,
+                2 => (sizes.0 / 2, sizes.1, 1),
+                4 => (sizes.0 / 2, sizes.1 / 2, 1),
+                8 => (sizes.0 / 4, sizes.1 / 2, 1),
+                16 => (sizes.0 / 4, sizes.1 / 4, 1),
+                _ => unimplemented!(),
+            }
+        }
+        TileKind::Volume => match texel_bits {
+            8 => (64, 32, 32),
+            16 => (32, 32, 32),
+            32 => (32, 32, 16),
+            64 => (32, 16, 16),
+            128 => (16, 16, 16),
+            _ => unimplemented!(),
+        },
+    }
 }

@@ -221,10 +221,22 @@ where
                 surface.supports_queue_family(family) && family.queue_type().supports_graphics()
             })
             .expect("No queue family supports presentation");
+
+        let device = &adapter.physical_device;
+        let sparsely_bound = device.features().contains(hal::Features::SPARSE_BINDING)
+            && device
+                .features()
+                .contains(hal::Features::SPARSE_RESIDENCY_IMAGE_2D);
         let mut gpu = unsafe {
-            adapter
-                .physical_device
-                .open(&[(family, &[1.0])], hal::Features::empty())
+            device
+                .open(
+                    &[(family, &[1.0])],
+                    if sparsely_bound {
+                        hal::Features::SPARSE_BINDING | hal::Features::SPARSE_RESIDENCY_IMAGE_2D
+                    } else {
+                        hal::Features::empty()
+                    },
+                )
                 .unwrap()
         };
         let mut queue_group = gpu.queue_groups.pop().unwrap();
@@ -393,7 +405,11 @@ where
                     ColorFormat::SELF,
                     i::Tiling::Optimal,
                     i::Usage::TRANSFER_DST | i::Usage::SAMPLED,
-                    i::ViewCapabilities::empty(),
+                    if sparsely_bound {
+                        i::ViewCapabilities::SPARSE_BINDING | i::ViewCapabilities::SPARSE_RESIDENCY
+                    } else {
+                        i::ViewCapabilities::empty()
+                    },
                 )
             }
             .unwrap(),
@@ -413,7 +429,43 @@ where
             unsafe { device.allocate_memory(device_type, image_req.size) }.unwrap(),
         );
 
-        unsafe { device.bind_image_memory(&image_memory, 0, &mut image_logo) }.unwrap();
+        if sparsely_bound {
+            println!("Using sparse resource binding");
+            unsafe {
+                queue_group.queues[0].bind_sparse(
+                    hal::queue::BindSparseInfo {
+                        wait_semaphores: std::iter::empty::<&B::Semaphore>(),
+                        signal_semaphores: std::iter::empty::<&B::Semaphore>(),
+                        buffer_memory_binds: std::iter::empty::<(
+                            &mut B::Buffer,
+                            std::iter::Empty<hal::memory::SparseBind<&B::Memory>>,
+                        )>(),
+                        image_opaque_memory_binds: std::iter::empty(),
+                        image_memory_binds: std::iter::once((
+                            &mut *image_logo,
+                            std::iter::once(hal::memory::SparseImageBind {
+                                subresource: hal::image::Subresource {
+                                    aspects: hal::format::Aspects::COLOR,
+                                    level: 0,
+                                    layer: 0,
+                                },
+                                offset: hal::image::Offset::ZERO,
+                                extent: hal::image::Extent {
+                                    width,
+                                    height,
+                                    depth: 1,
+                                },
+                                memory: Some((&*image_memory, 0)),
+                            }),
+                        )),
+                    },
+                    &device,
+                    None,
+                );
+            }
+        } else {
+            unsafe { device.bind_image_memory(&image_memory, 0, &mut image_logo) }.unwrap();
+        }
         let image_srv = ManuallyDrop::new(
             unsafe {
                 device.create_image_view(

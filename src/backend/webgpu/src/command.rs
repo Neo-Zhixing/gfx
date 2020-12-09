@@ -1,4 +1,7 @@
-use std::{borrow::Borrow, ops::Range};
+use std::{
+    borrow::{Borrow, BorrowMut},
+    ops::Range,
+};
 
 use hal::{
     buffer,
@@ -30,6 +33,27 @@ impl hal::queue::CommandQueue<Backend> for CommandQueue {
     ) where
         T: 'a + Borrow<<Backend as hal::Backend>::CommandBuffer>,
         Ic: IntoIterator<Item = &'a T>,
+        S: 'a + Borrow<<Backend as hal::Backend>::Semaphore>,
+        Iw: IntoIterator<Item = (&'a S, pso::PipelineStage)>,
+        Is: IntoIterator<Item = &'a S>,
+    {
+        todo!()
+    }
+
+    unsafe fn bind_sparse<'a, M, Bf, I, S, Iw, Is, Ibi, Ib, Iii, Io, Ii>(
+        &mut self,
+        _info: queue::BindSparseInfo<Iw, Is, Ib, Io, Ii>,
+        _device: &<Backend as hal::Backend>::Device,
+        _fence: Option<&<Backend as hal::Backend>::Fence>,
+    ) where
+        Bf: 'a + BorrowMut<<Backend as hal::Backend>::Buffer>,
+        M: 'a + Borrow<<Backend as hal::Backend>::Memory>,
+        Ibi: IntoIterator<Item = hal::memory::SparseBind<&'a M>>,
+        Ib: IntoIterator<Item = (&'a mut Bf, Ibi)>,
+        I: 'a + BorrowMut<<Backend as hal::Backend>::Image>,
+        Iii: IntoIterator<Item = hal::memory::SparseImageBind<&'a M>>,
+        Io: IntoIterator<Item = (&'a mut I, Ibi)>,
+        Ii: IntoIterator<Item = (&'a mut I, Iii)>,
         S: 'a + Borrow<<Backend as hal::Backend>::Semaphore>,
         Iw: IntoIterator<Item = (&'a S, pso::PipelineStage)>,
         Is: IntoIterator<Item = &'a S>,
