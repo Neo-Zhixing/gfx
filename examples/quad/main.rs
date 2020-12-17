@@ -222,13 +222,12 @@ where
             })
             .expect("No queue family supports presentation");
 
-        let device = &adapter.physical_device;
-        let sparsely_bound = device.features().contains(hal::Features::SPARSE_BINDING)
-            && device
-                .features()
-                .contains(hal::Features::SPARSE_RESIDENCY_IMAGE_2D);
+        let physical_device = &adapter.physical_device;
+        let sparsely_bound = physical_device
+            .features()
+            .contains(hal::Features::SPARSE_BINDING | hal::Features::SPARSE_RESIDENCY_IMAGE_2D);
         let mut gpu = unsafe {
-            device
+            physical_device
                 .open(
                     &[(family, &[1.0])],
                     if sparsely_bound {
