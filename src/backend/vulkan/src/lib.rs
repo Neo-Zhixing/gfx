@@ -1507,7 +1507,7 @@ impl queue::CommandQueue<Backend> for CommandQueue {
             .collect::<Vec<_>>();
 
         let mut buffer_memory_binds = Vec::new();
-        let buffer_binds = info
+        let mut buffer_binds = info
             .buffer_memory_binds
             .into_iter()
             .map(|(buffer, bind_iter)| {
@@ -1524,15 +1524,21 @@ impl queue::CommandQueue<Backend> for CommandQueue {
                     bind_builder.build()
                 }));
 
-                vk::SparseBufferMemoryBindInfo::builder()
-                    .buffer(buffer.borrow_mut().raw)
-                    .binds(&buffer_memory_binds[binds_before..])
-                    .build()
+                vk::SparseBufferMemoryBindInfo {
+                    buffer: buffer.borrow_mut().raw,
+                    bind_count: (buffer_memory_binds.len() - binds_before) as u32,
+                    p_binds: std::ptr::null(),
+                }
             })
             .collect::<Vec<_>>();
+        // Set buffer bindings
+        buffer_binds.iter_mut().fold(0u32, |idx, bind| {
+            (*bind).p_binds = &buffer_memory_binds[idx as usize];
+            idx + bind.bind_count
+        });
 
         let mut image_opaque_memory_binds = Vec::new();
-        let image_opaque_binds = info
+        let mut image_opaque_binds = info
             .image_opaque_memory_binds
             .into_iter()
             .map(|(image, bind_iter)| {
@@ -1549,17 +1555,21 @@ impl queue::CommandQueue<Backend> for CommandQueue {
                     bind_builder.build()
                 }));
 
-                vk::SparseImageOpaqueMemoryBindInfo::builder()
-                    .image(image.borrow_mut().raw)
-                    .binds(
-                        &image_opaque_memory_binds[binds_before..image_opaque_memory_binds.len()],
-                    )
-                    .build()
+                vk::SparseImageOpaqueMemoryBindInfo {
+                    image: image.borrow_mut().raw,
+                    bind_count: (image_opaque_memory_binds.len() - binds_before) as u32,
+                    p_binds: std::ptr::null(),
+                }
             })
             .collect::<Vec<_>>();
+        // Set opaque image bindings
+        image_opaque_binds.iter_mut().fold(0u32, |idx, bind| {
+            (*bind).p_binds = &image_opaque_memory_binds[idx as usize];
+            idx + bind.bind_count
+        });
 
         let mut image_memory_binds = Vec::new();
-        let image_binds = info
+        let mut image_binds = info
             .image_memory_binds
             .into_iter()
             .map(|(image, bind_iter)| {
@@ -1577,12 +1587,18 @@ impl queue::CommandQueue<Backend> for CommandQueue {
                     bind_builder.build()
                 }));
 
-                vk::SparseImageMemoryBindInfo::builder()
-                    .image(image.borrow_mut().raw)
-                    .binds(&image_memory_binds[binds_before..image_memory_binds.len()])
-                    .build()
+                vk::SparseImageMemoryBindInfo {
+                    image: image.borrow_mut().raw,
+                    bind_count: (image_memory_binds.len() - binds_before) as u32,
+                    p_binds: std::ptr::null(),
+                }
             })
             .collect::<Vec<_>>();
+        // Set image bindings
+        image_binds.iter_mut().fold(0u32, |idx, bind| {
+            (*bind).p_binds = &image_memory_binds[idx as usize];
+            idx + bind.bind_count
+        });
 
         let info = vk::BindSparseInfo::builder()
             .wait_semaphores(&waits)
